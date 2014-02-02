@@ -90,7 +90,7 @@ status_t CameraClient::initialize(camera_module_t *module) {
     // Enable zoom, error, focus, and metadata messages by default
     enableMsgType(CAMERA_MSG_ERROR | CAMERA_MSG_ZOOM | CAMERA_MSG_FOCUS
 #ifndef CAMERA_MSG_MGMT
-                  | CAMERA_MSG_PREVIEW_METADATA 
+                  | CAMERA_MSG_PREVIEW_METADATA
 #endif
 #ifndef OMAP_ICS_CAMERA
                   | CAMERA_MSG_FOCUS_MOVE
