@@ -1196,7 +1196,7 @@ void AwesomePlayer::createAudioPlayer_l()
             cachedDurationUs > AUDIO_SINK_MIN_DEEP_BUFFER_DURATION_US))) {
         flags |= AudioPlayer::ALLOW_DEEP_BUFFERING;
     }
-    if (isStreamingHTTP()) {
+    if (isStreamingHTTP() || isWidevineContent()) {
         flags |= AudioPlayer::IS_STREAMING;
     }
     if (mVideoSource != NULL) {
@@ -1772,7 +1772,8 @@ status_t AwesomePlayer::initAudioDecoder() {
     }
 
     mOffloadAudio = canOffloadStream(meta, (mVideoSource != NULL), vMeta,
-                                     isStreamingHTTP(), streamType);
+                                     (isStreamingHTTP() || isWidevineContent()),
+                                     streamType);
 
 #ifdef QCOM_DIRECTTRACK
     int32_t nchannels = 0;
@@ -1890,6 +1891,10 @@ status_t AwesomePlayer::initAudioDecoder() {
     if (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_RAW)) {
         ALOGV("createAudioPlayer: bypass OMX (raw)");
         mAudioSource = mAudioTrack;
+        // For PCM offload fallback
+        if (mOffloadAudio) {
+            mOmxSource = mAudioSource;
+        }
     } else {
         // If offloading we still create a OMX decoder as a fall-back
         // but we don't start it
@@ -1913,13 +1918,14 @@ status_t AwesomePlayer::initAudioDecoder() {
     mAudioTrack->getFormat()->findInt64(kKeyDuration, &durationUs);
 
     if (!mOffloadAudio && mAudioSource != NULL) {
-        ALOGW("Could not offload audio decode, try pcm offload");
+        ALOGI("Could not offload audio decode, try pcm offload");
         sp<MetaData> format = mAudioSource->getFormat();
         if (durationUs >= 0) {
             format->setInt64(kKeyDuration, durationUs);
         }
         mOffloadAudio = canOffloadStream(format, (mVideoSource != NULL), vMeta,
-                                     isStreamingHTTP(), streamType);
+                                    (isStreamingHTTP() || isWidevineContent()),
+                                     streamType);
     }
 
     if (mAudioSource != NULL) {
@@ -2151,8 +2157,8 @@ void AwesomePlayer::onVideoEvent() {
             mVideoBuffer = NULL;
         }
 
-        if (mSeeking == SEEK && isStreamingHTTP() && mAudioSource != NULL
-                && !(mFlags & SEEK_PREVIEW)) {
+        if (mSeeking == SEEK && (isStreamingHTTP() || mOffloadAudio)
+                && mAudioSource != NULL && !(mFlags & SEEK_PREVIEW)) {
             // We're going to seek the video source first, followed by
             // the audio source.
             // In order to avoid jumps in the DataSource offset caused by
@@ -3304,6 +3310,22 @@ status_t AwesomePlayer::invoke(const Parcel &request, Parcel *reply) {
 
 bool AwesomePlayer::isStreamingHTTP() const {
     return mCachedSource != NULL || mWVMExtractor != NULL;
+}
+
+bool AwesomePlayer::isWidevineContent() const {
+    if (mWVMExtractor != NULL) {
+        return true;
+    }
+
+    sp<MetaData> fileMeta = mExtractor->getMetaData();
+    const char *containerMime;
+    if (fileMeta != NULL &&
+        fileMeta->findCString(kKeyMIMEType, &containerMime) &&
+        !strcasecmp(containerMime, "video/wvm")) {
+       return true;
+    }
+
+    return false;
 }
 
 status_t AwesomePlayer::dump(int fd, const Vector<String16> &args) const {
